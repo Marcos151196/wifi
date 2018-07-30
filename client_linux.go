@@ -9,11 +9,12 @@ import (
 	"os"
 	"time"
 	"unicode/utf8"
+	"fmt"
 
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
 	"github.com/mdlayher/netlink/nlenc"
-	"github.com/mdlayher/wifi/internal/nl80211"
+	"github.com/Marcos151196/wifi/nl80211"
 )
 
 // Errors which may occur when interacting with generic netlink.
@@ -163,6 +164,52 @@ func (c *client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
 
 	return stations, nil
 }
+
+
+
+
+
+
+///////GET WIPHY INFO///////////
+func (c *client) GetWiphy(ifi *Interface) ([]*StationInfo, error) {
+	b, err := netlink.MarshalAttributes(ifi.idAttrs())
+	if err != nil {
+		return nil, err
+	}
+
+	// Ask nl80211 to retrieve station info for the interface specified
+	// by its attributes
+	req := genetlink.Message{
+		Header: genetlink.Header{
+			Command: nl80211.CmdGetWiphy,
+			Version: c.familyVersion,
+		},
+		Data: b,
+	}
+
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsDump
+	msgs, err := c.c.Execute(req, c.familyID, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(msgs) == 0 {
+		return nil, os.ErrNotExist
+	}
+
+	//Wiphys := make([]*WiphyInfo, len(msgs))
+	stations := make([]*StationInfo, len(msgs))
+	for i := range msgs {
+		fmt.Printf("%v\t",msgs[i])
+
+		// if Wiphys[i], err = parseWiphyInfo(msgs[i].Data); err != nil {
+		// 	return nil, err
+		// }
+	}
+
+	return stations, nil
+}
+
 
 
 // checkMessages verifies that response messages from generic netlink contain
@@ -372,10 +419,66 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 			info.ReceivedBytes = int(nlenc.Uint64(a.Data))
 		case nl80211.StaInfoTxBytes64:
 			info.TransmittedBytes = int(nlenc.Uint64(a.Data))
+		case nl80211.StaInfoLlid:
+			info.LLID = int(nlenc.Uint16(a.Data))
+		case nl80211.StaInfoPlid:
+			info.PLID = int(nlenc.Uint16(a.Data))
+		case nl80211.StaInfoPlinkState:
+			switch (int(nlenc.Uint8(a.Data))) {
+			case nl80211.PlinkListen:
+				info.PlinkState = "LISTEN"
+			case nl80211.PlinkOpnSnt:
+				info.PlinkState = "OPN_SNT"
+			case nl80211.PlinkOpnRcvd:
+				info.PlinkState = "OPN_RCVD"
+			case nl80211.PlinkCnfRcvd:
+				info.PlinkState = "CNF_RCVD"
+			case nl80211.PlinkEstab:
+				info.PlinkState = "ESTAB"
+			case nl80211.PlinkHolding:
+				info.PlinkState = "HOLDING"
+			case nl80211.PlinkBlocked:
+				info.PlinkState = "BLOCKED"
+			default:
+				info.PlinkState = "UNKNOWN"
+			}
 		case nl80211.StaInfoSignal:
 			//  * @NL80211_STA_INFO_SIGNAL: signal strength of last received PPDU (u8, dBm)
 			// Should just be cast to int8, see code here: https://git.kernel.org/pub/scm/linux/kernel/git/jberg/iw.git/tree/station.c#n378
-			info.Signal = int(int8(1))
+			info.Signal = int(int8(a.Data[0]))
+		case nl80211.StaInfoChainSignal:
+			aa := fmt.Sprintf("[%d %d]", int(int8(a.Data[4])), int(int8(a.Data[12])))
+			info.Signal2 = aa
+		case nl80211.StaInfoSignalAvg:
+			info.SignalAvg = int(int8(a.Data[0]))
+		case nl80211.StaInfoChainSignalAvg:
+			aa := fmt.Sprintf("[%d %d]", int(int8(a.Data[4])), int(int8(a.Data[12])))
+			info.SignalAvg2 = aa
+		case nl80211.StaInfoStaFlags: 
+			if(a.Data[0] & (2 << (nl80211.StaFlagAuthorized-1)) !=0 ){
+				if(a.Data[4] & (2 << (nl80211.StaFlagAuthorized-1)) !=0 ){
+					info.Authorized = "Yes"
+				} else{
+					info.Authorized = "No"
+				}
+			}
+
+			if(a.Data[0] & (2 << (nl80211.StaFlagAuthenticated-1)) !=0 ){
+				if(a.Data[4] & (2 << (nl80211.StaFlagAuthenticated-1)) !=0 ){
+					info.Authenticated = "Yes"
+				} else{
+					info.Authenticated = "No"
+				}
+			}
+
+			if(a.Data[0] & (2 << (nl80211.StaFlagAssociated-1)) !=0 ){
+				if(a.Data[4] & (2 << (nl80211.StaFlagAssociated-1)) !=0 ){
+					info.Associated = "Yes"
+				} else{
+					info.Associated = "No"
+				}
+			}
+			
 		case nl80211.StaInfoRxPackets:
 			info.ReceivedPackets = int(nlenc.Uint32(a.Data))
 		case nl80211.StaInfoTxPackets:

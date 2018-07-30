@@ -137,6 +137,12 @@ type StationInfo struct {
 	// The time since wireless activity last occurred.
 	Inactive time.Duration
 
+	LLID int
+
+	PLID int
+
+	PlinkState string
+
 	// The number of bytes received by this station.
 	ReceivedBytes int
 
@@ -157,6 +163,18 @@ type StationInfo struct {
 
 	// The signal strength of this station's connection, in dBm.
 	Signal int
+
+	Signal2 string
+
+	SignalAvg int
+
+	SignalAvg2 string
+
+	Authorized string
+
+	Authenticated string
+
+	Associated string
 
 	// The number of times the station has had to retry while sending a packet.
 	TransmitRetries int
