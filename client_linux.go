@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 	"unicode/utf8"
-	"fmt"
+	"strings"
 
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
@@ -76,7 +76,6 @@ func (c *client) Interfaces() ([]*Interface, error) {
 			Version: c.familyVersion,
 		},
 	}
-
 	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsDump
 	msgs, err := c.c.Execute(req, c.familyID, flags)
 	if err != nil {
@@ -86,9 +85,11 @@ func (c *client) Interfaces() ([]*Interface, error) {
 	if err := c.checkMessages(msgs, nl80211.CmdNewInterface); err != nil {
 		return nil, err
 	}
+	ifis,err := c.parseInterfaces(msgs)
 
-	return parseInterfaces(msgs)
+	return ifis,err
 }
+
 
 // BSS requests that nl80211 return the BSS for the specified Interface.
 func (c *client) BSS(ifi *Interface) (*BSS, error) {
@@ -122,7 +123,10 @@ func (c *client) BSS(ifi *Interface) (*BSS, error) {
 
 // StationInfo requests that nl80211 return all station info for the specified
 // Interface.
-func (c *client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
+func (c *client) StationInfoDump(ifi *Interface) ([]*StationInfo, error) {
+	if (ifi == nil){
+		return nil, errors.New("Interface does not exist.")
+	}
 	b, err := netlink.MarshalAttributes(ifi.idAttrs())
 	if err != nil {
 		return nil, err
@@ -144,6 +148,7 @@ func (c *client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
 	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsDump
 	msgs, err := c.c.Execute(req, c.familyID, flags)
 	if err != nil {
+
 		return nil, err
 	}
 
@@ -157,7 +162,7 @@ func (c *client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
 			return nil, err
 		}
 
-		if stations[i], err = parseStationInfo(msgs[i].Data); err != nil {
+		if stations[i], err = ifi.parseStationInfo(msgs[i].Data); err != nil {
 			return nil, err
 		}
 	}
@@ -166,15 +171,85 @@ func (c *client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
 }
 
 
+//////////GETS ONE STATION INFO SPECIFIED BY MAC /////
+func (c *client) StationInfo(ifiMAC string, STAMAC string) (*StationInfo, error) {
+	var station *StationInfo
+	ifi,err := c.GetInterface(ifiMAC)
+	if (ifi == nil){
+		return nil, errors.New("Interface does not exist.")
+	}
+	MAC,_ := net.ParseMAC(STAMAC)
+	attrs := []netlink.Attribute{
+		{
+			Length: 8,
+			Type: nl80211.AttrIfindex,
+			Data: nlenc.Uint32Bytes(uint32(ifi.Index)),
+		},
+		{
+			Length: 10,
+			Type: nl80211.AttrMac,
+			Data: MAC,
+		},
+	}
+	b, err := netlink.MarshalAttributes(attrs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ask nl80211 to retrieve station info for the interface specified
+	// by its attributes
+	req := genetlink.Message{
+		Header: genetlink.Header{
+			// From nl80211.h:
+			//  * @NL80211_CMD_GET_STATION: Get station attributes for station identified by
+			//  * %NL80211_ATTR_MAC on the interface identified by %NL80211_ATTR_IFINDEX.
+			Command: nl80211.CmdGetStation,
+			Version: c.familyVersion,
+		},
+		Data: b,
+	}
+
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsAcknowledge
+	msgs, err := c.c.Execute(req, c.familyID, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(msgs) == 0 {
+		return nil, os.ErrNotExist
+	}
+
+	for i := range msgs {
+		if err := c.checkMessages(msgs, nl80211.CmdNewStation); err != nil {
+			return nil, err
+		}
+
+		if station, err = ifi.parseStationInfo(msgs[i].Data); err != nil {
+			return nil, err
+		}
+	}
+
+	return station, nil
+}
+
+
 
 
 
 
 ///////GET WIPHY INFO///////////
-func (c *client) GetWiphy(ifi *Interface) ([]*StationInfo, error) {
-	b, err := netlink.MarshalAttributes(ifi.idAttrs())
+func (c *client) GetWiphy(ifi *Interface) (error) {
+
+	attrs := []netlink.Attribute{
+		{
+			Length: 8,
+			Type: nl80211.AttrWiphy,
+			Data: nlenc.Uint32Bytes(uint32(ifi.PHY)),
+		},
+	}
+	b, err := netlink.MarshalAttributes(attrs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Ask nl80211 to retrieve station info for the interface specified
@@ -187,29 +262,240 @@ func (c *client) GetWiphy(ifi *Interface) ([]*StationInfo, error) {
 		Data: b,
 	}
 
-	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsDump
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsAcknowledge | netlink.HeaderFlagsRoot | netlink.HeaderFlagsMatch
 	msgs, err := c.c.Execute(req, c.familyID, flags)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if len(msgs) == 0 {
-		return nil, os.ErrNotExist
+		return os.ErrNotExist
 	}
 
-	//Wiphys := make([]*WiphyInfo, len(msgs))
-	stations := make([]*StationInfo, len(msgs))
+	//fmt.Printf("\nAQUI: %v\n", msgs)
+
+	// Wiphys := make([]*StationInfo, len(msgs))
+	// stations := make([]*StationInfo, len(msgs))
 	for i := range msgs {
-		fmt.Printf("%v\t",msgs[i])
+		//fmt.Printf("%v\t",msgs[i].Data)´
 
-		// if Wiphys[i], err = parseWiphyInfo(msgs[i].Data); err != nil {
-		// 	return nil, err
-		// }
+		if err := c.checkMessages(msgs, nl80211.CmdNewWiphy); err != nil {
+			return err
+		}
+
+		err = ifi.parseWiphyInfo(msgs[i].Data)
+		if (err != nil){
+			return err
+		}
 	}
 
-	return stations, nil
+	// return stations, nil
+	return nil
 }
 
+
+
+///////SET TX POWER///////////
+func (c *client) SetTxPower(ifiMAC string, PowerSetting int, dBm uint16) (error) {
+	ifi,err := c.GetInterface(ifiMAC)
+	if(err != nil){
+		return err
+	}
+	PowerLevel := nlenc.Uint16Bytes(uint16(dBm*100))
+	attrs := []netlink.Attribute{
+		{
+			Type: nl80211.AttrIfindex,
+			Data: nlenc.Uint32Bytes(uint32(ifi.Index)),
+		},
+		{
+			Type: nl80211.AttrWiphyTxPowerSetting,
+			Data: nlenc.Uint32Bytes(uint32(PowerSetting)),
+		},
+		{
+			Length: 8,
+			Type: nl80211.AttrWiphyTxPowerLevel,
+			Data: PowerLevel,
+		},
+	}
+	b,_ := netlink.MarshalAttributes(attrs)
+	req := genetlink.Message{
+		Header: genetlink.Header{
+			Command: nl80211.CmdSetWiphy,
+			Version: c.familyVersion,
+		},
+		Data: b,
+	}
+
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsAcknowledge
+	msgs, err := c.c.Execute(req, c.familyID, flags)
+	if err != nil {
+		return err
+	}
+
+	if len(msgs) == 0 {
+		return os.ErrNotExist
+	}
+
+	return nil
+}
+
+///////SET WIPHY NAME///////////
+func (c *client) SetPhyName(ifiMAC string, name string) (error) {
+	ifi,err := c.GetInterface(ifiMAC)
+	if(err != nil){
+		return err
+	}
+	NewName := []byte(name)
+	attrs := []netlink.Attribute{
+		{
+			Type: nl80211.AttrWiphy,
+			Data: nlenc.Uint32Bytes(uint32(ifi.PHY)),
+		},
+		{
+			Length: uint16(len(NewName)+5), //Length = length(1 byte) + padding(1 byte) + type(1 byte) + padding(1 byte) + payload(x bytes) + padding(1 byte) = 1+1+1+1+length(Data)+1
+			Type: nl80211.AttrWiphyName,
+			Data: NewName,
+		},
+	}
+	b,_ := netlink.MarshalAttributes(attrs)
+	req := genetlink.Message{
+		Header: genetlink.Header{
+			Command: nl80211.CmdSetWiphy,
+			Version: c.familyVersion,
+		},
+		Data: b,
+	}
+
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsAcknowledge
+	msgs, err := c.c.Execute(req, c.familyID, flags)
+	if err != nil {
+		return err
+	}
+
+	if len(msgs) == 0 {
+		return os.ErrNotExist
+	}
+
+	return nil
+}
+
+///////SET Channel///////////
+func (c *client) SetChannel(ifiMAC string, channel int, channelType int) (error) {
+	ifi,err := c.GetInterface(ifiMAC)
+	if(err != nil){
+		return err
+	}
+
+	attrs := []netlink.Attribute{
+		{
+			Length: 8,
+			Type: nl80211.AttrWiphy,
+			Data: nlenc.Uint32Bytes(uint32(ifi.PHY)),
+		},
+		{
+			Length: 8,
+			Type: nl80211.AttrWiphyFreq,
+			Data: nlenc.Uint32Bytes(uint32(ChannelToFreq(channel))),
+		},
+		{
+			Length: 8,
+			Type: nl80211.AttrWiphyChannelType,
+			Data: nlenc.Uint32Bytes(uint32(channelType)),
+		},
+	}
+	b,_ := netlink.MarshalAttributes(attrs)
+	req := genetlink.Message{
+		Header: genetlink.Header{
+			Command: nl80211.CmdSetWiphy,
+			Version: c.familyVersion,
+		},
+		Data: b,
+	}
+
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsAcknowledge
+	msgs, err := c.c.Execute(req, c.familyID, flags)
+	if err != nil {
+		return err
+	}
+
+	if len(msgs) == 0 {
+		return os.ErrNotExist
+	}
+
+	return nil
+}
+
+///////DELETE STATION///////////
+func (c *client) DelSTA(STAMAC string) (error) {
+
+	sta,err := c.GetSTA(STAMAC)
+	if(err != nil){
+		return errors.New("Specified STA does not exist.")
+	}
+	MAC,_ := net.ParseMAC(STAMAC)
+	attrs := []netlink.Attribute{
+		{
+			Length: 8,
+			Type: nl80211.AttrIfindex,
+			Data: nlenc.Uint32Bytes(uint32(sta.InterfaceIndex)),
+		},
+		{
+			Length: 10,
+			Type: nl80211.AttrMac,
+			Data: MAC,
+		},
+	}
+	b,_ := netlink.MarshalAttributes(attrs)
+	req := genetlink.Message{
+		Header: genetlink.Header{
+			Command: nl80211.CmdDelStation,
+			Version: c.familyVersion,
+		},
+		Data: b,
+	}
+
+	flags := netlink.HeaderFlagsRequest | netlink.HeaderFlagsAcknowledge
+	msgs, err := c.c.Execute(req, c.familyID, flags)
+	if err != nil {
+		return err
+	}
+
+	if err := c.checkMessages(msgs, nl80211.CmdDelStation); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+///////////////GET INTERFACE///////////////////
+func (c *client) GetInterface(MAC string) (*Interface, error){
+	interfaces,err := c.Interfaces()
+	if(err != nil){
+		return nil, errors.New("Error when trying to get the interface list.")
+	}
+	for _,ifi := range interfaces{
+		if(strings.Compare(ifi.HardwareAddr.String(), MAC) == 0){
+			return ifi,nil
+		}
+	}
+	return nil, errors.New("Interface does not exist.")
+}
+
+///////////////GET STA///////////////////
+func (c *client) GetSTA(STAMAC string) (*StationInfo, error){
+	interfaces,err := c.Interfaces()
+	if(err != nil){
+		return nil, errors.New("Error when trying to get the interface list.")
+	}
+	for _,ifi := range interfaces{
+		for _,sta := range ifi.STAList{
+			if(strings.Compare(sta, STAMAC) == 0){
+				return c.StationInfo(ifi.HardwareAddr.String(), STAMAC)
+			}
+		}
+	}
+	return nil, errors.New("Interface does not exist.")
+}
 
 
 // checkMessages verifies that response messages from generic netlink contain
@@ -230,8 +516,9 @@ func (c *client) checkMessages(msgs []genetlink.Message, command uint8) error {
 
 // parseInterfaces parses zero or more Interfaces from nl80211 interface
 // messages.
-func parseInterfaces(msgs []genetlink.Message) ([]*Interface, error) {
+func (c *client) parseInterfaces(msgs []genetlink.Message) ([]*Interface, error) {
 	ifis := make([]*Interface, 0, len(msgs))
+
 	for _, m := range msgs {
 		attrs, err := netlink.UnmarshalAttributes(m.Data)
 		if err != nil {
@@ -239,12 +526,18 @@ func parseInterfaces(msgs []genetlink.Message) ([]*Interface, error) {
 		}
 
 		var ifi Interface
-		if err := (&ifi).parseAttributes(attrs); err != nil {
+		if err := (&ifi).parseAttributes(attrs,c); err != nil {
+			return nil, err
+		}
+
+		if err := c.GetWiphy(&ifi); err != nil {
 			return nil, err
 		}
 
 		ifis = append(ifis, &ifi)
 	}
+
+	
 
 	return ifis, nil
 }
@@ -265,7 +558,7 @@ func (ifi *Interface) idAttrs() []netlink.Attribute {
 }
 
 // parseAttributes parses netlink attributes into an Interface's fields.
-func (ifi *Interface) parseAttributes(attrs []netlink.Attribute) error {
+func (ifi *Interface) parseAttributes(attrs []netlink.Attribute, c *client) error {
 	for _, a := range attrs {
 		switch a.Type {
 		case nl80211.AttrIfindex:
@@ -276,6 +569,8 @@ func (ifi *Interface) parseAttributes(attrs []netlink.Attribute) error {
 			ifi.HardwareAddr = net.HardwareAddr(a.Data)
 		case nl80211.AttrWiphy:
 			ifi.PHY = int(nlenc.Uint32(a.Data))
+		case nl80211.AttrWiphyName:
+			ifi.PHYName = nlenc.String(a.Data)
 		case nl80211.AttrIftype:
 			// NOTE: InterfaceType copies the ordering of nl80211's interface type
 			// constants.  This may not be the case on other operating systems.
@@ -284,7 +579,45 @@ func (ifi *Interface) parseAttributes(attrs []netlink.Attribute) error {
 			ifi.Device = int(nlenc.Uint64(a.Data))
 		case nl80211.AttrWiphyFreq:
 			ifi.Frequency = int(nlenc.Uint32(a.Data))
+			ifi.Channel = FreqToChannel(int(nlenc.Uint32(a.Data)))
+		case nl80211.AttrWiphyTxPowerLevel:
+			ifi.TxPower =  float32(nlenc.Uint32(a.Data)/100)
+		case nl80211.AttrSsid:
+			ifi.SSID =  nlenc.String(a.Data)
+		case nl80211.AttrWiphyChannelType:
+			ifi.ChannelType = int(nlenc.Uint32(a.Data))
+		case nl80211.AttrChannelWidth:
+
+			switch int(nlenc.Uint32(a.Data)){
+			case nl80211.ChanWidth20Noht:
+				ifi.ChanWidth =  "20 MHz (No HT)"
+			case nl80211.ChanWidth20:
+				ifi.ChanWidth =  "20 MHz"
+			case nl80211.ChanWidth40:
+				ifi.ChanWidth =  "40 MHz"
+			case nl80211.ChanWidth80:
+				ifi.ChanWidth =  "80 MHz"
+			case nl80211.ChanWidth80p80:
+				ifi.ChanWidth =  "80+80 MHz"
+			case nl80211.ChanWidth160:
+				ifi.ChanWidth =  "160 MHz"
+			case nl80211.ChanWidth5:
+				ifi.ChanWidth =  "5 MHz"
+			case nl80211.ChanWidth10:
+				ifi.ChanWidth =  "10 MHz"
+			}
+		case nl80211.AttrCenterFreq1:
+			ifi.CenterFreq1 = int(nlenc.Uint32(a.Data))
+		case nl80211.AttrCenterFreq2:
+			ifi.CenterFreq2 = int(nlenc.Uint32(a.Data))
+			
 		}
+		stas,_ := c.StationInfoDump(ifi)
+		STAarray := make([]string, len(stas))
+		for i,sta := range stas{
+			STAarray[i] = sta.HardwareAddr.String()
+		}
+		ifi.STAList = STAarray
 	}
 
 	return nil
@@ -366,14 +699,18 @@ func (b *BSS) parseAttributes(attrs []netlink.Attribute) error {
 
 // parseStationInfo parses StationInfo attributes from a byte slice of
 // netlink attributes.
-func parseStationInfo(b []byte) (*StationInfo, error) {
+func (ifi *Interface) parseStationInfo(b []byte) (*StationInfo, error) {
 	attrs, err := netlink.UnmarshalAttributes(b)
 	if err != nil {
 		return nil, err
 	}
+	
 
 	var info StationInfo
+	info.Interface = ifi.HardwareAddr
+	info.InterfaceIndex = ifi.Index
 	for _, a := range attrs {
+		//fmt.Printf("%v\n", a.Data)
 
 		switch a.Type {
 		case nl80211.AttrMac:
@@ -404,17 +741,34 @@ func parseStationInfo(b []byte) (*StationInfo, error) {
 	return nil, os.ErrNotExist
 }
 
+////////////PARSEWIPHYINFO
+func (ifi *Interface) parseWiphyInfo(b []byte) (error) {
+	attrs, err := netlink.UnmarshalAttributes(b)
+	if err != nil {
+		return err
+	}
+	// fmt.Printf("lol %v\n\n\n", attrs)
+	for _, a := range attrs {
+		switch a.Type {
+		case nl80211.AttrWiphyName:
+			ifi.PHYName = nlenc.String(a.Data)
+		default:
+			continue
+		}
+	}
+	// No station info found
+	return nil
+}
+
 // parseAttributes parses netlink attributes into a StationInfo's fields.
 func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 	for _, a := range attrs {
+		//fmt.Printf("%v\t",a.Type)
 		switch a.Type {
 		case nl80211.StaInfoConnectedTime:
-			// Though nl80211 does not specify, this value appears to be in seconds:
-			// * @NL80211_STA_INFO_CONNECTED_TIME: time since the station is last connected
-			info.Connected = time.Duration(nlenc.Uint32(a.Data)) * time.Second
+			info.Connected = (time.Duration(nlenc.Uint32(a.Data)) * time.Second).Seconds()
 		case nl80211.StaInfoInactiveTime:
-			// * @NL80211_STA_INFO_INACTIVE_TIME: time since last activity (u32, msecs)
-			info.Inactive = time.Duration(nlenc.Uint32(a.Data)) * time.Millisecond
+			info.Inactive = (time.Duration(nlenc.Uint32(a.Data)) * time.Millisecond).Seconds()
 		case nl80211.StaInfoRxBytes64:
 			info.ReceivedBytes = int(nlenc.Uint64(a.Data))
 		case nl80211.StaInfoTxBytes64:
@@ -443,39 +797,37 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 				info.PlinkState = "UNKNOWN"
 			}
 		case nl80211.StaInfoSignal:
-			//  * @NL80211_STA_INFO_SIGNAL: signal strength of last received PPDU (u8, dBm)
-			// Should just be cast to int8, see code here: https://git.kernel.org/pub/scm/linux/kernel/git/jberg/iw.git/tree/station.c#n378
 			info.Signal = int(int8(a.Data[0]))
 		case nl80211.StaInfoChainSignal:
-			aa := fmt.Sprintf("[%d %d]", int(int8(a.Data[4])), int(int8(a.Data[12])))
-			info.Signal2 = aa
+			info.SignalH = int(int8(a.Data[4]))
+			info.SignalV = int(int8(a.Data[12]))
 		case nl80211.StaInfoSignalAvg:
 			info.SignalAvg = int(int8(a.Data[0]))
 		case nl80211.StaInfoChainSignalAvg:
-			aa := fmt.Sprintf("[%d %d]", int(int8(a.Data[4])), int(int8(a.Data[12])))
-			info.SignalAvg2 = aa
+			info.SignalAvgH = int(int8(a.Data[4]))
+			info.SignalAvgV = int(int8(a.Data[12]))
 		case nl80211.StaInfoStaFlags: 
 			if(a.Data[0] & (2 << (nl80211.StaFlagAuthorized-1)) !=0 ){
 				if(a.Data[4] & (2 << (nl80211.StaFlagAuthorized-1)) !=0 ){
-					info.Authorized = "Yes"
+					info.Authorized = 1
 				} else{
-					info.Authorized = "No"
+					info.Authorized = 0
 				}
 			}
 
 			if(a.Data[0] & (2 << (nl80211.StaFlagAuthenticated-1)) !=0 ){
 				if(a.Data[4] & (2 << (nl80211.StaFlagAuthenticated-1)) !=0 ){
-					info.Authenticated = "Yes"
+					info.Authenticated = 1
 				} else{
-					info.Authenticated = "No"
+					info.Authenticated = 0
 				}
 			}
 
 			if(a.Data[0] & (2 << (nl80211.StaFlagAssociated-1)) !=0 ){
 				if(a.Data[4] & (2 << (nl80211.StaFlagAssociated-1)) !=0 ){
-					info.Associated = "Yes"
+					info.Associated = 1
 				} else{
-					info.Associated = "No"
+					info.Associated = 0
 				}
 			}
 			

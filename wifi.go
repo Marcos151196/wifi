@@ -115,6 +115,9 @@ type Interface struct {
 	// The physical device that this interface belongs to.
 	PHY int
 
+	// The name of the physical device that this interface belongs to.
+	PHYName string
+
 	// The virtual device number of this interface within a PHY.
 	Device int
 
@@ -123,6 +126,30 @@ type Interface struct {
 
 	// The interface's wireless frequency in MHz.
 	Frequency int
+
+	// Channel index
+	Channel int
+
+	// Channel type
+	ChannelType int
+
+	// Channel width
+	ChanWidth string
+
+	// Center frequency pimary
+	CenterFreq1 int
+
+	// Center frequency secondary
+	CenterFreq2 int
+
+	// Transmit power in dBm
+	TxPower float32
+
+	// SSID
+	SSID string
+
+	// List of the STAs associated to this interface
+	STAList []string
 }
 
 // StationInfo contains statistics about a WiFi interface operating in
@@ -131,16 +158,25 @@ type StationInfo struct {
 	// The hardware address of the station.
 	HardwareAddr net.HardwareAddr
 
+	// The MAC of the interface that the STA is associated to
+	Interface net.HardwareAddr
+
+	// The index of the interface that the STA is associated to
+	InterfaceIndex int
+
 	// The time since the station last connected.
-	Connected time.Duration
+	Connected float64
 
 	// The time since wireless activity last occurred.
-	Inactive time.Duration
+	Inactive float64
 
+	// Mesh LLID
 	LLID int
 
+	// Mesh PLID
 	PLID int
 
+	// Link status
 	PlinkState string
 
 	// The number of bytes received by this station.
@@ -164,17 +200,29 @@ type StationInfo struct {
 	// The signal strength of this station's connection, in dBm.
 	Signal int
 
-	Signal2 string
+	// The signal strength of this station's connection, in dBm. Horizontal polarization
+	SignalH int
 
+	// The signal strength of this station's connection, in dBm. Vertical polarization
+	SignalV int
+
+	// The average signal strength of this station's connection, in dBm.
 	SignalAvg int
 
-	SignalAvg2 string
+	// The average signal strength of this station's connection, in dBm. Horizontal polarization
+	SignalAvgH int
 
-	Authorized string
+	// The average signal strength of this station's connection, in dBm. Vertical polarization
+	SignalAvgV int
 
-	Authenticated string
+	// Authorized flag
+	Authorized int
 
-	Associated string
+	// Authenticated flag
+	Authenticated int
+
+	// Associated flag
+	Associated int
 
 	// The number of times the station has had to retry while sending a packet.
 	TransmitRetries int
@@ -282,4 +330,26 @@ func parseIEs(b []byte) ([]ie, error) {
 	}
 
 	return ies, nil
+}
+
+func FreqToChannel(freq int) (int){
+	if (freq == 2484){
+		return 14
+	} else if (freq < 2484){
+		return (freq - 2407) / 5
+	} else if (freq >= 4910 && freq <= 4980){
+		return (freq - 4000) / 5
+	} else{
+		return (freq - 5000) / 5
+	}
+}
+
+func ChannelToFreq(channel int) (int){
+	if (channel == 14){
+		return 2484
+	} else if (channel < 14){
+		return 2407 + channel * 5
+	} else{
+		return 0
+	}
 }

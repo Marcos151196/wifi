@@ -46,8 +46,40 @@ func (c *Client) BSS(ifi *Interface) (*BSS, error) {
 }
 
 // StationInfo retrieves all station statistics about a WiFi interface.
-func (c *Client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
-	return c.c.StationInfo(ifi)
+func (c *Client) StationInfoDump(ifi *Interface) ([]*StationInfo, error) {
+	return c.c.StationInfoDump(ifi)
+}
+
+func (c *Client) StationInfo(ifiMAC string, STAMAC string) (*StationInfo, error) {
+	return c.c.StationInfo(ifiMAC, STAMAC)
+}
+
+func (c *Client) GetWiphy(ifi *Interface) (error) {
+	return c.c.GetWiphy(ifi)
+}
+
+func (c *Client) SetTxPower(ifiMAC string, PowerSetting int, dBm uint16) (error) {
+	return c.c.SetTxPower(ifiMAC, PowerSetting, dBm)
+}
+
+func (c *Client) SetPhyName(ifi string, name string) (error) {
+	return c.c.SetPhyName(ifi,name)
+}
+
+func (c *Client) SetChannel(ifiMAC string, channel int, channelType int) (error) {
+	return c.c.SetChannel(ifiMAC, channel, channelType)
+}
+
+func (c *Client) DelSTA(STAMAC string) (error) {
+	return c.c.DelSTA(STAMAC)
+}
+
+func (c *Client) GetInterface(MAC string) (*Interface, error){
+	return c.c.GetInterface(MAC)
+}
+
+func (c *Client) GetSTA(MAC string) (*StationInfo, error){
+	return c.c.GetSTA(MAC)
 }
 
 // An osClient is the operating system-specific implementation of Client.
@@ -55,5 +87,13 @@ type osClient interface {
 	Close() error
 	Interfaces() ([]*Interface, error)
 	BSS(ifi *Interface) (*BSS, error)
-	StationInfo(ifi *Interface) ([]*StationInfo, error)
+	StationInfoDump(ifi *Interface) ([]*StationInfo, error)
+	StationInfo(ifiMAC string, STAMAC string) (*StationInfo, error)
+	GetWiphy(ifi *Interface) (error)
+	SetTxPower(ifi string, PowerSetting int, dBm uint16) (error)
+	SetPhyName(ifi string, name string) (error)
+	SetChannel(ifiMAC string, channel int, channelType int) (error) 
+	DelSTA(STAMAC string) (error)
+	GetInterface(MAC string) (*Interface, error)
+	GetSTA(MAC string) (*StationInfo, error)
 }
