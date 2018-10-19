@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 	"strings"
+	"fmt"
 
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
@@ -729,6 +730,7 @@ func (ifi *Interface) parseStationInfo(b []byte) (*StationInfo, error) {
 			// nl80211.AttrStaInfo is last attibute we are interested in
 			return &info, nil
 
+			
 		default:
 			// The other attributes that are returned here appear
 			// nl80211.AttrIfindex, nl80211.AttrGeneration
@@ -852,8 +854,10 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 			switch a.Type {
 			case nl80211.StaInfoRxBitrate:
 				info.ReceiveBitrate = rate.Bitrate
+				info.ReceiveMCS = rate.MCS
 			case nl80211.StaInfoTxBitrate:
 				info.TransmitBitrate = rate.Bitrate
+				info.TransmitMCS = rate.MCS
 			}
 		}
 
@@ -876,6 +880,7 @@ func (info *StationInfo) parseAttributes(attrs []netlink.Attribute) error {
 type rateInfo struct {
 	// Bitrate in bits per second.
 	Bitrate int
+	MCS string
 }
 
 // parseRateInfo parses a rateInfo from netlink attributes.
@@ -890,6 +895,10 @@ func parseRateInfo(b []byte) (*rateInfo, error) {
 		switch a.Type {
 		case nl80211.RateInfoBitrate32:
 			info.Bitrate = int(nlenc.Uint32(a.Data))
+		case nl80211.RateInfoMcs:
+			info.MCS = fmt.Sprintf("MCS %v", int(nlenc.Uint8(a.Data)))
+		case nl80211.RateInfoVhtMcs:
+			info.MCS = fmt.Sprintf("VHT-MCS %v", int(nlenc.Uint8(a.Data)))
 		}
 
 		// Only use 16-bit counters if the 32-bit counters are not present.

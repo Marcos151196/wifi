@@ -194,8 +194,14 @@ type StationInfo struct {
 	// The current data receive bitrate, in bits/second.
 	ReceiveBitrate int
 
+	// Transmit Digital Modulation Scheme (MCS)
+	TransmitMCS string
+
 	// The current data transmit bitrate, in bits/second.
 	TransmitBitrate int
+
+	// Transmit Digital Modulation Scheme (MCS)
+	ReceiveMCS string
 
 	// The signal strength of this station's connection, in dBm.
 	Signal int
