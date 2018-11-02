@@ -173,9 +173,9 @@ func (c *client) StationInfoDump(ifi *Interface) ([]*StationInfo, error) {
 
 
 //////////GETS ONE STATION INFO SPECIFIED BY MAC /////
-func (c *client) StationInfo(ifiMAC string, STAMAC string) (*StationInfo, error) {
+func (c *client) StationInfo(ifiName string, STAMAC string) (*StationInfo, error) {
 	var station *StationInfo
-	ifi,err := c.GetInterface(ifiMAC)
+	ifi,err := c.GetInterface(ifiName)
 	if (ifi == nil){
 		return nil, errors.New("Interface does not exist.")
 	}
@@ -297,8 +297,8 @@ func (c *client) GetWiphy(ifi *Interface) (error) {
 
 
 ///////SET TX POWER///////////
-func (c *client) SetTxPower(ifiMAC string, PowerSetting int, dBm uint16) (error) {
-	ifi,err := c.GetInterface(ifiMAC)
+func (c *client) SetTxPower(ifiName string, PowerSetting int, dBm uint16) (error) {
+	ifi,err := c.GetInterface(ifiName)
 	if(err != nil){
 		return err
 	}
@@ -341,8 +341,8 @@ func (c *client) SetTxPower(ifiMAC string, PowerSetting int, dBm uint16) (error)
 }
 
 ///////SET WIPHY NAME///////////
-func (c *client) SetPhyName(ifiMAC string, name string) (error) {
-	ifi,err := c.GetInterface(ifiMAC)
+func (c *client) SetPhyName(ifiName string, name string) (error) {
+	ifi,err := c.GetInterface(ifiName)
 	if(err != nil){
 		return err
 	}
@@ -381,8 +381,8 @@ func (c *client) SetPhyName(ifiMAC string, name string) (error) {
 }
 
 ///////SET Channel///////////
-func (c *client) SetChannel(ifiMAC string, channel int, channelType int) (error) {
-	ifi,err := c.GetInterface(ifiMAC)
+func (c *client) SetChannel(ifiName string, channel int, channelType int) (error) {
+	ifi,err := c.GetInterface(ifiName)
 	if(err != nil){
 		return err
 	}
@@ -469,13 +469,13 @@ func (c *client) DelSTA(STAMAC string) (error) {
 }
 
 ///////////////GET INTERFACE///////////////////
-func (c *client) GetInterface(MAC string) (*Interface, error){
+func (c *client) GetInterface(ifiName string) (*Interface, error){
 	interfaces,err := c.Interfaces()
-	if(err != nil){
+	if (err != nil){
 		return nil, errors.New("Error when trying to get the interface list.")
 	}
 	for _,ifi := range interfaces{
-		if(strings.Compare(ifi.HardwareAddr.String(), MAC) == 0){
+		if (strings.Compare(ifi.Name, ifiName) == 0){
 			return ifi,nil
 		}
 	}
@@ -491,7 +491,7 @@ func (c *client) GetSTA(STAMAC string) (*StationInfo, error){
 	for _,ifi := range interfaces{
 		for _,sta := range ifi.STAList{
 			if(strings.Compare(sta, STAMAC) == 0){
-				return c.StationInfo(ifi.HardwareAddr.String(), STAMAC)
+				return c.StationInfo(ifi.Name, STAMAC)
 			}
 		}
 	}

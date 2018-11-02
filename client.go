@@ -50,32 +50,32 @@ func (c *Client) StationInfoDump(ifi *Interface) ([]*StationInfo, error) {
 	return c.c.StationInfoDump(ifi)
 }
 
-func (c *Client) StationInfo(ifiMAC string, STAMAC string) (*StationInfo, error) {
-	return c.c.StationInfo(ifiMAC, STAMAC)
+func (c *Client) StationInfo(ifiName string, STAMAC string) (*StationInfo, error) {
+	return c.c.StationInfo(ifiName, STAMAC)
 }
 
 func (c *Client) GetWiphy(ifi *Interface) (error) {
 	return c.c.GetWiphy(ifi)
 }
 
-func (c *Client) SetTxPower(ifiMAC string, PowerSetting int, dBm uint16) (error) {
-	return c.c.SetTxPower(ifiMAC, PowerSetting, dBm)
+func (c *Client) SetTxPower(ifiName string, PowerSetting int, dBm uint16) (error) {
+	return c.c.SetTxPower(ifiName, PowerSetting, dBm)
 }
 
-func (c *Client) SetPhyName(ifi string, name string) (error) {
-	return c.c.SetPhyName(ifi,name)
+func (c *Client) SetPhyName(ifiName string, name string) (error) {
+	return c.c.SetPhyName(ifiName,name)
 }
 
-func (c *Client) SetChannel(ifiMAC string, channel int, channelType int) (error) {
-	return c.c.SetChannel(ifiMAC, channel, channelType)
+func (c *Client) SetChannel(ifiName string, channel int, channelType int) (error) {
+	return c.c.SetChannel(ifiName, channel, channelType)
 }
 
 func (c *Client) DelSTA(STAMAC string) (error) {
 	return c.c.DelSTA(STAMAC)
 }
 
-func (c *Client) GetInterface(MAC string) (*Interface, error){
-	return c.c.GetInterface(MAC)
+func (c *Client) GetInterface(ifiName string) (*Interface, error){
+	return c.c.GetInterface(ifiName)
 }
 
 func (c *Client) GetSTA(MAC string) (*StationInfo, error){
@@ -88,12 +88,12 @@ type osClient interface {
 	Interfaces() ([]*Interface, error)
 	BSS(ifi *Interface) (*BSS, error)
 	StationInfoDump(ifi *Interface) ([]*StationInfo, error)
-	StationInfo(ifiMAC string, STAMAC string) (*StationInfo, error)
+	StationInfo(ifiName string, STAMAC string) (*StationInfo, error)
 	GetWiphy(ifi *Interface) (error)
-	SetTxPower(ifi string, PowerSetting int, dBm uint16) (error)
-	SetPhyName(ifi string, name string) (error)
-	SetChannel(ifiMAC string, channel int, channelType int) (error) 
+	SetTxPower(ifiName string, PowerSetting int, dBm uint16) (error)
+	SetPhyName(ifiName string, name string) (error)
+	SetChannel(ifiName string, channel int, channelType int) (error) 
 	DelSTA(STAMAC string) (error)
-	GetInterface(MAC string) (*Interface, error)
+	GetInterface(ifiName string) (*Interface, error)
 	GetSTA(MAC string) (*StationInfo, error)
 }
